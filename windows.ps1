@@ -1,61 +1,286 @@
-# Check if running as administrator
-If (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator"))
-{
-    Write-Host "Please run this script as Administrator."
-    Exit
+# windows system protection
+
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+
+$LogFile = "C:\temp\protect_script.log"
+$AllowedPorts = @(22, 80, 443, 3389)
+$BackupDir = "C:\temp\firewall_backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+$ServicesToDisable = @(
+    @{Name="WSearch"; DisplayName="Windows Search"; Critical=$false},
+    @{Name="RemoteRegistry"; DisplayName="Remote Registry"; Critical=$false},
+    @{Name="Fax"; DisplayName="Fax"; Critical=$false},
+    @{Name="TlntSvr"; DisplayName="Telnet"; Critical=$false},
+    @{Name="FTP"; DisplayName="FTP Server"; Critical=$false}
+)
+
+$LogDir = Split-Path $LogFile
+if (!(Test-Path $LogDir)) {
+    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 }
 
-# Enable Windows Firewall
-Write-Host "Enabling Windows Firewall..."
-netsh advfirewall set allprofiles state on
+function Write-Log {
+    param([string]$Message, [string]$Level = "INFO")
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logMessage = "$timestamp [$Level]: $Message"
+    Write-Host $logMessage
+    Add-Content -Path $LogFile -Value $logMessage -Encoding UTF8
+}
 
-# Set default inbound and outbound policies
-Write-Host "Setting default firewall policies..."
-netsh advfirewall set allprofiles firewallpolicy blockinbound,allowoutbound
+function Backup-SystemState {
+    Write-Log "creating system backup: $BackupDir"
+    New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
+    
+    # backup firewall config
+    netsh advfirewall export "$BackupDir\firewall_backup.wfw" | Out-Null
+    
+    # backup services states
+    Get-Service | Export-Csv "$BackupDir\services_original.csv" -NoTypeInformation
+    
+    # backup registry settings for networking
+    reg export "HKLM\Software\Policies\Microsoft\Windows NT\DNSClient" "$BackupDir\dns_settings.reg" /y 2>$null
+    
+    # create restore script
+    @"
+@echo off
+echo Restoring Windows system state...
+netsh advfirewall import "$BackupDir\firewall_backup.wfw"
+echo Firewall restored
+reg import "$BackupDir\dns_settings.reg" 2>nul
+echo Registry settings restored
+echo Restore complete - reboot recommended
+pause
+"@ | Out-File "$BackupDir\restore.bat" -Encoding ASCII
+    
+    Write-Log "backup created: $BackupDir"
+}
 
-# Allow necessary inbound rules (Example: Remote Desktop, HTTP, HTTPS)
-Write-Host "Allowing necessary inbound rules: Remote Desktop (3389), HTTP (80), HTTPS (443)..."
-netsh advfirewall firewall add rule name="Allow Remote Desktop" protocol=TCP dir=in localport=3389 action=allow
-netsh advfirewall firewall add rule name="Allow HTTP" protocol=TCP dir=in localport=80 action=allow
-netsh advfirewall firewall add rule name="Allow HTTPS" protocol=TCP dir=in localport=443 action=allow
+function Cleanup-OldBackups {
+    Get-ChildItem "C:\temp" -Directory -Name "firewall_backup_*" | 
+        Where-Object { (Get-Item "C:\temp\$_").CreationTime -lt (Get-Date).AddDays(-7) } |
+        ForEach-Object { Remove-Item "C:\temp\$_" -Recurse -Force -ErrorAction SilentlyContinue }
+}
 
-# Block all other inbound connections
-Write-Host "Blocking all other inbound connections..."
-netsh advfirewall firewall set rule group="all" new enable=no
+function Test-ServiceSafety {
+    param([string]$ServiceName)
+    
+    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if (-not $service) { return $false }
+    
+    # check if service has dependents
+    $dependents = Get-Service -DependentServices $service.Name -ErrorAction SilentlyContinue
+    if ($dependents -and $dependents.Status -eq "Running") {
+        Write-Log "WARNING: $ServiceName has running dependents, skipping" "WARN"
+        return $false
+    }
+    
+    # check if it's a critical system service
+    $criticalServices = @("winmgmt", "rpcss", "dcom", "eventlog", "plugplay")
+    if ($criticalServices -contains $ServiceName.ToLower()) {
+        Write-Log "WARNING: $ServiceName is critical, skipping" "WARN"
+        return $false
+    }
+    
+    return $true
+}
 
-# Disable unnecessary services
-Write-Host "Disabling unnecessary services..."
-Set-Service -Name "WSearch" -StartupType Disabled
-Stop-Service -Name "WSearch"
-Set-Service -Name "RemoteRegistry" -StartupType Disabled
-Stop-Service -Name "RemoteRegistry"
-Set-Service -Name "Fax" -StartupType Disabled
-Stop-Service -Name "Fax"
+function Set-ServiceSafely {
+    param(
+        [hashtable]$ServiceInfo,
+        [string]$StartupType = "Disabled",
+        [string]$Action = "Stop"
+    )
+    
+    $serviceName = $ServiceInfo.Name
+    $displayName = $ServiceInfo.DisplayName
+    
+    if (-not (Test-ServiceSafety -ServiceName $serviceName)) {
+        return
+    }
+    
+    $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    if ($service) {
+        try {
+            $originalStartType = (Get-WmiObject -Class Win32_Service -Filter "Name='$serviceName'").StartMode
+            Write-Log "backing up $serviceName startup: $originalStartType"
+            Add-Content "$BackupDir\service_changes.log" "$serviceName,$originalStartType"
+            
+            if ($Action -eq "Stop" -and $service.Status -eq "Running") {
+                Write-Log "stopping $displayName"
+                Stop-Service -Name $serviceName -Force -ErrorAction Stop
+                # verify it stopped
+                Start-Sleep -Seconds 2
+                $service.Refresh()
+                if ($service.Status -ne "Stopped") {
+                    Write-Log "WARNING: failed to stop $displayName" "WARN"
+                    return
+                }
+            }
+            
+            Write-Log "setting $displayName to $StartupType"
+            Set-Service -Name $serviceName -StartupType $StartupType -ErrorAction Stop
+            
+            # verify the change
+            $newService = Get-Service -Name $serviceName
+            $newStartType = (Get-WmiObject -Class Win32_Service -Filter "Name='$serviceName'").StartMode
+            if ($newStartType -ne $StartupType) {
+                Write-Log "WARNING: failed to change $displayName startup type" "WARN"
+            }
+            
+        } catch {
+            Write-Log "WARNING: could not configure $displayName : $_" "WARN"
+        }
+    } else {
+        Write-Log "$displayName not found" "INFO"
+    }
+}
 
-# Apply security settings
-Write-Host "Applying security settings..."
+function Handle-Error {
+    param([string]$ErrorMessage)
+    Write-Log "ERROR: $ErrorMessage" "ERROR"
+    Write-Log "script failed, check logs" "ERROR"
+    Write-Log "restore with: $BackupDir\restore.bat" "ERROR"
+    exit 1
+}
 
-# Disable IP forwarding
-Write-Host "Disabling IP forwarding..."
-Set-NetIPInterface -Forwarding Disabled
+try {
+    Write-Log "starting windows protection script..."
 
-# Disable SMBv1
-Write-Host "Disabling SMBv1..."
-Disable-WindowsOptionalFeature -Online -FeatureName smb1protocol
+    if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+        Handle-Error "run as administrator"
+    }
 
-# Disable NetBIOS over TCP/IP
-Write-Host "Disabling NetBIOS over TCP/IP..."
-Get-NetAdapter | Set-NetAdapterAdvancedProperty -DisplayName "NetBIOS over Tcpip" -DisplayValue "Disable"
+    Cleanup-OldBackups
+    Backup-SystemState
 
-# Disable LLMNR
-Write-Host "Disabling LLMNR..."
-Set-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows NT\DNSClient" -Name "EnableMulticast" -Value 0
+    Write-Log "enabling firewall..."
+    netsh advfirewall set allprofiles state on
+    if ($LASTEXITCODE -ne 0) {
+        throw "failed to enable firewall"
+    }
 
-# Apply changes and restart network services
-Write-Host "Applying changes and restarting network services..."
-Restart-Service -Name "Dnscache"
-Restart-Service -Name "NcaSvc"
-Restart-Service -Name "NetSetupSvc"
-Restart-Service -Name "DHCP"
+    Write-Log "setting default policies..."
+    netsh advfirewall set allprofiles firewallpolicy blockinbound,allowoutbound
+    if ($LASTEXITCODE -ne 0) {
+        throw "failed to set policies"
+    }
 
-Write-Host "All done! Your system is now more secure while maintaining an internet connection."
+    Write-Log "removing old rules..."
+    netsh advfirewall firewall delete rule name="Allow HTTP" 2>$null
+    netsh advfirewall firewall delete rule name="Allow HTTPS" 2>$null
+    netsh advfirewall firewall delete rule name="Allow Remote Desktop" 2>$null
+    netsh advfirewall firewall delete rule name="Block Attack Ports" 2>$null
+
+    Write-Log "configuring allowed ports..."
+    
+    Write-Log "allowing http (80)..."
+    netsh advfirewall firewall add rule name="Allow HTTP" protocol=TCP dir=in localport=80 action=allow
+    if ($LASTEXITCODE -ne 0) { throw "failed to allow http" }
+
+    Write-Log "allowing https (443)..."
+    netsh advfirewall firewall add rule name="Allow HTTPS" protocol=TCP dir=in localport=443 action=allow
+    if ($LASTEXITCODE -ne 0) { throw "failed to allow https" }
+
+    $rdpEnabled = Get-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -ErrorAction SilentlyContinue
+    if ($rdpEnabled -and $rdpEnabled.fDenyTSConnections -eq 0) {
+        Write-Log "rdp enabled, allowing port 3389..."
+        netsh advfirewall firewall add rule name="Allow Remote Desktop" protocol=TCP dir=in localport=3389 action=allow
+        if ($LASTEXITCODE -ne 0) { throw "failed to allow rdp" }
+    } else {
+        Write-Log "rdp disabled, skipping"
+    }
+
+    Write-Log "blocking attack ports..."
+    $attackPorts = @(135, 139, 445, 1433, 1434, 5985, 5986)
+    foreach ($port in $attackPorts) {
+        netsh advfirewall firewall add rule name="Block Attack Port $port" protocol=TCP dir=in localport=$port action=block | Out-Null
+    }
+
+    Write-Log "configuring services..."
+    foreach ($serviceInfo in $ServicesToDisable) {
+        Set-ServiceSafely -ServiceInfo $serviceInfo -StartupType "Disabled" -Action "Stop"
+    }
+
+    Write-Log "applying hardening..."
+
+    try {
+        Write-Log "disabling ip forwarding..."
+        $adapters = Get-NetAdapter -Physical | Where-Object {$_.Status -eq "Up"}
+        foreach ($adapter in $adapters) {
+            Set-NetIPInterface -InterfaceIndex $adapter.InterfaceIndex -Forwarding Disabled -ErrorAction SilentlyContinue
+        }
+    } catch {
+        Write-Log "WARNING: could not disable forwarding: $_" "WARN"
+    }
+
+    try {
+        Write-Log "disabling smbv1..."
+        $smbFeature = Get-WindowsOptionalFeature -Online -FeatureName smb1protocol -ErrorAction SilentlyContinue
+        if ($smbFeature -and $smbFeature.State -eq "Enabled") {
+            Disable-WindowsOptionalFeature -Online -FeatureName smb1protocol -NoRestart
+        }
+    } catch {
+        Write-Log "WARNING: could not disable smbv1: $_" "WARN"
+    }
+
+    try {
+        Write-Log "disabling netbios..."
+        Get-NetAdapter | ForEach-Object {
+            try {
+                Set-NetAdapterAdvancedProperty -Name $_.Name -DisplayName "NetBIOS over Tcpip" -DisplayValue "Disable" -ErrorAction SilentlyContinue
+            } catch {
+            }
+        }
+    } catch {
+        Write-Log "WARNING: could not configure netbios: $_" "WARN"
+    }
+
+    try {
+        Write-Log "disabling llmnr..."
+        $regPath = "HKLM:\Software\Policies\Microsoft\Windows NT\DNSClient"
+        if (!(Test-Path $regPath)) {
+            New-Item -Path $regPath -Force | Out-Null
+        }
+        Set-ItemProperty -Path $regPath -Name "EnableMulticast" -Value 0
+    } catch {
+        Write-Log "WARNING: could not disable llmnr: $_" "WARN"
+    }
+
+    Write-Log "restarting network services..."
+    $networkServices = @("Dnscache", "NcaSvc", "NetSetupSvc", "DHCP")
+    foreach ($serviceName in $networkServices) {
+        try {
+            $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+            if ($service -and $service.Status -eq "Running") {
+                Restart-Service -Name $serviceName -Force
+                Write-Log "restarted $serviceName"
+            }
+        } catch {
+            Write-Log "WARNING: could not restart $serviceName : $_" "WARN"
+        }
+    }
+
+    Write-Log "verifying config..."
+    $firewallStatus = netsh advfirewall show allprofiles state
+    Write-Log "firewall status:"
+    $firewallStatus | Add-Content -Path $LogFile -Encoding UTF8
+
+    Write-Log "done!"
+    Write-Log "backup: $BackupDir"
+    Write-Log "restore: $BackupDir\restore.bat"
+    Write-Log "logs: $LogFile"
+
+    Write-Host ""
+    Write-Host "✅ windows system protected" -ForegroundColor Green
+    Write-Host "• firewall: enabled, deny incoming" -ForegroundColor White
+    Write-Host "• ports: $($AllowedPorts -join ', ')" -ForegroundColor White
+    Write-Host "• attack ports: blocked" -ForegroundColor White
+    Write-Host "• services: unnecessary ones disabled" -ForegroundColor White
+    Write-Host "• protocols: smbv1, netbios, llmnr disabled" -ForegroundColor White
+    Write-Host "• backup: $BackupDir" -ForegroundColor White
+    Write-Host "• restore: $BackupDir\restore.bat" -ForegroundColor White
+    Write-Host "• logs: $LogFile" -ForegroundColor White
+
+} catch {
+    Handle-Error $_.Exception.Message
+}

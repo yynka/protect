@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Enable strict error handling
 set -euo pipefail
 
 LOG_FILE="/var/log/protect_script.log"
@@ -9,46 +10,6 @@ BACKUP_DIR="/tmp/pf_backup_$(date +%Y%m%d_%H%M%S)"
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S'): $1" | tee -a "$LOG_FILE"
 }
-
-backup_system_state() {
-    log "creating backup: $BACKUP_DIR"
-    mkdir -p "$BACKUP_DIR"
-    
-    # backup pf.conf
-    if [ -f /etc/pf.conf ]; then
-        cp /etc/pf.conf "$BACKUP_DIR/pf.conf"
-        log "backed up pf.conf"
-    fi
-    
-    # backup current pf rules
-    pfctl -sr > "$BACKUP_DIR/pf_rules_original.txt" 2>/dev/null || true
-    
-    # backup sysctl settings  
-    sysctl -a > "$BACKUP_DIR/sysctl_original.conf" 2>/dev/null || true
-    
-    # create restore script
-    cat > "$BACKUP_DIR/restore.sh" << 'EOF'
-#!/bin/bash
-echo "restoring macos system state..."
-if [ -f "pf.conf" ]; then
-    sudo cp pf.conf /etc/pf.conf
-    sudo pfctl -f /etc/pf.conf
-    echo "pf.conf restored"
-fi
-if [ -f /etc/sysctl.conf ]; then
-    sudo rm -f /etc/sysctl.conf
-fi
-echo "restore complete - reboot recommended"
-EOF
-    chmod +x "$BACKUP_DIR/restore.sh"
-    
-    log "backup created: $BACKUP_DIR"
-}
-
-cleanup_old_backups() {
-    find /tmp -name "pf_backup_*" -type d -mtime +7 -exec rm -rf {} \; 2>/dev/null || true
-}
-
 handle_error() {
     log "ERROR: script failed at line $1"
     log "ERROR: command: $2"
@@ -57,16 +18,12 @@ handle_error() {
         cp "$BACKUP_DIR/pf.conf" /etc/pf.conf
         pfctl -f /etc/pf.conf 2>/dev/null || true
     fi
-    log "restore with: $BACKUP_DIR/restore.sh"
     exit 1
 }
 
 trap 'handle_error $LINENO "$BASH_COMMAND"' ERR
 
 log "starting macos protection script..."
-
-cleanup_old_backups
-backup_system_state
 
 if [ "$EUID" -ne 0 ]; then
     log "ERROR: run with sudo"
@@ -76,6 +33,17 @@ fi
 if ! command -v pfctl &> /dev/null; then
     log "ERROR: pfctl not found"
     exit 1
+fi
+
+log "creating backup: $BACKUP_DIR"
+mkdir -p "$BACKUP_DIR"
+
+log "backing up pf.conf..."
+if [ -f /etc/pf.conf ]; then
+    cp /etc/pf.conf "$BACKUP_DIR/pf.conf"
+    log "backed up to $BACKUP_DIR/pf.conf"
+else
+    log "no existing pf.conf, creating new"
 fi
 
 log "creating firewall config..."
@@ -131,7 +99,6 @@ pfctl -sr | tee -a "$LOG_FILE"
 
 log "done!"
 log "backup: $BACKUP_DIR/"
-log "restore: $BACKUP_DIR/restore.sh"
 log "logs: $LOG_FILE"
 
 echo ""
@@ -142,5 +109,6 @@ echo "• ssh: rate limited (max 3/ip)"
 echo "• attack ports: blocked and logged"
 echo "• kernel: hardened"
 echo "• backup: $BACKUP_DIR/"
-echo "• restore: $BACKUP_DIR/restore.sh"
-echo "• logs: $LOG_FILE" 
+echo "• logs: $LOG_FILE"
+echo ""
+echo "restore: sudo cp $BACKUP_DIR/pf.conf /etc/pf.conf && sudo pfctl -f /etc/pf.conf"
