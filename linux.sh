@@ -1,11 +1,109 @@
 #!/bin/bash
 
-# Enable strict error handling
 set -euo pipefail
 
 LOG_FILE="/var/log/protect_script.log"
-ALLOWED_PORTS=(22 80 443)
 BACKUP_DIR="/tmp/linux_backup_$(date +%Y%m%d_%H%M%S)"
+
+# Protection level configurations
+declare -A LEVEL_PORTS=(
+    ["maximum"]="22"
+    ["medium"]="22 80 443"
+    ["minimum"]="22 80 443 8080 3000 5000"
+)
+
+declare -A LEVEL_SERVICES=(
+    ["maximum"]="135 139 445 1433 3389 5985 5986 1723 161"
+    ["medium"]="135 139 445 1433 3389"
+    ["minimum"]="135 139 445"
+)
+
+declare -A LEVEL_DESCRIPTIONS=(
+    ["maximum"]="Full hardening - servers, high security"
+    ["medium"]="Balanced security - workstations (recommended)"
+    ["minimum"]="Basic protection - development, compatibility"
+)
+
+PROTECTION_LEVEL=""
+ALLOWED_PORTS=()
+BLOCKED_PORTS=()
+
+parse_arguments() {
+    case "${1:-}" in
+        --maximum)
+            PROTECTION_LEVEL="maximum"
+            ;;
+        --medium)
+            PROTECTION_LEVEL="medium"
+            ;;
+        --minimum)
+            PROTECTION_LEVEL="minimum"
+            ;;
+        --help|-h)
+            echo "Usage: $0 [--maximum|--medium|--minimum]"
+            echo ""
+            echo "Protection Levels:"
+            echo "  --maximum  ${LEVEL_DESCRIPTIONS["maximum"]}"
+            echo "  --medium   ${LEVEL_DESCRIPTIONS["medium"]}"
+            echo "  --minimum  ${LEVEL_DESCRIPTIONS["minimum"]}"
+            echo ""
+            echo "If no level is specified, interactive selection will be shown."
+            exit 0
+            ;;
+        "")
+            # No argument provided - will show interactive menu
+            ;;
+        *)
+            echo "Error: Unknown option $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+}
+
+select_protection_level() {
+    if [ -n "$PROTECTION_LEVEL" ]; then
+        return # Level already set via command line
+    fi
+    
+    echo ""
+    echo "Select Protection Level:"
+    echo "1) Maximum - ${LEVEL_DESCRIPTIONS["maximum"]}"
+    echo "2) Medium  - ${LEVEL_DESCRIPTIONS["medium"]}"  
+    echo "3) Minimum - ${LEVEL_DESCRIPTIONS["minimum"]}"
+    echo ""
+    
+    while true; do
+        read -p "Enter choice [1-3]: " choice
+        case $choice in
+            1)
+                PROTECTION_LEVEL="maximum"
+                break
+                ;;
+            2)
+                PROTECTION_LEVEL="medium"
+                break
+                ;;
+            3)
+                PROTECTION_LEVEL="minimum"
+                break
+                ;;
+            *)
+                echo "Invalid choice. Please enter 1, 2, or 3."
+                ;;
+        esac
+    done
+}
+
+configure_protection_level() {
+    # Convert space-separated strings to arrays
+    read -ra ALLOWED_PORTS <<< "${LEVEL_PORTS[$PROTECTION_LEVEL]}"
+    read -ra BLOCKED_PORTS <<< "${LEVEL_SERVICES[$PROTECTION_LEVEL]}"
+    
+    log "protection level: $PROTECTION_LEVEL"
+    log "allowed ports: ${ALLOWED_PORTS[*]}"
+    log "blocked ports: ${BLOCKED_PORTS[*]}"
+}
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S'): $1" | tee -a "$LOG_FILE"
 }
@@ -54,7 +152,11 @@ handle_error() {
 }
 trap 'handle_error $LINENO "$BASH_COMMAND"' ERR
 
+parse_arguments "$@"
+
 log "starting linux protection script..."
+select_protection_level
+configure_protection_level
 
 cleanup_old_backups
 backup_system_state
@@ -109,11 +211,9 @@ log "adding security rules..."
 ufw limit ssh
 
 log "blocking common attack ports..."
-ufw deny 135
-ufw deny 139
-ufw deny 445
-ufw deny 1433
-ufw deny 3389
+for port in "${BLOCKED_PORTS[@]}"; do
+    ufw deny "$port"
+done
 log "enabling firewall..."
 ufw --force enable
 
@@ -172,11 +272,12 @@ log "restore: $BACKUP_DIR/restore.sh"
 log "logs: $LOG_FILE"
 
 echo ""
-echo "✅ linux system protected"
+echo "[+] linux system protected"
+echo "• level: $PROTECTION_LEVEL"
 echo "• firewall: enabled, deny incoming"
 echo "• ports: $(IFS=', '; echo "${ALLOWED_PORTS[*]}")"
 echo "• ssh: rate limited"
-echo "• attack ports: blocked"
+echo "• attack ports: $(IFS=', '; echo "${BLOCKED_PORTS[*]}")"
 echo "• kernel: hardened"
 echo "• backup: $BACKUP_DIR"
 echo "• restore: $BACKUP_DIR/restore.sh"

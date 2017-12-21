@@ -4,15 +4,116 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $LogFile = "C:\temp\protect_script.log"
-$AllowedPorts = @(22, 80, 443, 3389)
 $BackupDir = "C:\temp\firewall_backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-$ServicesToDisable = @(
-    @{Name="WSearch"; DisplayName="Windows Search"; Critical=$false},
-    @{Name="RemoteRegistry"; DisplayName="Remote Registry"; Critical=$false},
-    @{Name="Fax"; DisplayName="Fax"; Critical=$false},
-    @{Name="TlntSvr"; DisplayName="Telnet"; Critical=$false},
-    @{Name="FTP"; DisplayName="FTP Server"; Critical=$false}
-)
+
+# Protection level configurations
+$LevelPorts = @{
+    "maximum" = @(22)
+    "medium" = @(22, 80, 443, 3389)
+    "minimum" = @(22, 80, 443, 3389, 8080, 3000, 5000)
+}
+
+$LevelServices = @{
+    "maximum" = @(135, 139, 445, 1433, 1434, 3389, 5985, 5986, 1723, 161)
+    "medium" = @(135, 139, 445, 1433, 1434)
+    "minimum" = @(135, 139, 445)
+}
+
+$LevelDescriptions = @{
+    "maximum" = "Full hardening - servers, high security"
+    "medium" = "Balanced security - workstations (recommended)"
+    "minimum" = "Basic protection - development, compatibility"
+}
+
+$ServicesToDisable = @{
+    "maximum" = @(
+        @{Name="WSearch"; DisplayName="Windows Search"},
+        @{Name="RemoteRegistry"; DisplayName="Remote Registry"},
+        @{Name="Fax"; DisplayName="Fax"},
+        @{Name="TlntSvr"; DisplayName="Telnet"},
+        @{Name="FTP"; DisplayName="FTP Server"},
+        @{Name="SNMP"; DisplayName="SNMP Service"},
+        @{Name="Spooler"; DisplayName="Print Spooler"}
+    )
+    "medium" = @(
+        @{Name="WSearch"; DisplayName="Windows Search"},
+        @{Name="RemoteRegistry"; DisplayName="Remote Registry"},
+        @{Name="Fax"; DisplayName="Fax"},
+        @{Name="TlntSvr"; DisplayName="Telnet"},
+        @{Name="FTP"; DisplayName="FTP Server"}
+    )
+    "minimum" = @(
+        @{Name="RemoteRegistry"; DisplayName="Remote Registry"},
+        @{Name="TlntSvr"; DisplayName="Telnet"},
+        @{Name="FTP"; DisplayName="FTP Server"}
+    )
+}
+
+$ProtectionLevel = ""
+$AllowedPorts = @()
+$BlockedPorts = @()
+$CurrentServicesToDisable = @()
+
+function Parse-Arguments {
+    param([string[]]$Args)
+    
+    if ($Args.Length -gt 0) {
+        switch ($Args[0]) {
+            "--maximum" { $script:ProtectionLevel = "maximum" }
+            "--medium" { $script:ProtectionLevel = "medium" }
+            "--minimum" { $script:ProtectionLevel = "minimum" }
+            "--help" -or "-h" {
+                Write-Host "Usage: powershell -File windows.ps1 [--maximum|--medium|--minimum]"
+                Write-Host ""
+                Write-Host "Protection Levels:"
+                Write-Host "  --maximum  $($LevelDescriptions['maximum'])"
+                Write-Host "  --medium   $($LevelDescriptions['medium'])"
+                Write-Host "  --minimum  $($LevelDescriptions['minimum'])"
+                Write-Host ""
+                Write-Host "If no level is specified, interactive selection will be shown."
+                exit 0
+            }
+            default {
+                Write-Host "Error: Unknown option $($Args[0])"
+                Write-Host "Use --help for usage information"
+                exit 1
+            }
+        }
+    }
+}
+
+function Select-ProtectionLevel {
+    if ($script:ProtectionLevel -ne "") {
+        return # Level already set via command line
+    }
+    
+    Write-Host ""
+    Write-Host "Select Protection Level:"
+    Write-Host "1) Maximum - $($LevelDescriptions['maximum'])"
+    Write-Host "2) Medium  - $($LevelDescriptions['medium'])"
+    Write-Host "3) Minimum - $($LevelDescriptions['minimum'])"
+    Write-Host ""
+    
+    do {
+        $choice = Read-Host "Enter choice [1-3]"
+        switch ($choice) {
+            "1" { $script:ProtectionLevel = "maximum"; break }
+            "2" { $script:ProtectionLevel = "medium"; break }  
+            "3" { $script:ProtectionLevel = "minimum"; break }
+            default { Write-Host "Invalid choice. Please enter 1, 2, or 3." }
+        }
+    } while ($script:ProtectionLevel -eq "")
+}
+
+function Configure-ProtectionLevel {
+    $script:AllowedPorts = $LevelPorts[$script:ProtectionLevel]
+    $script:BlockedPorts = $LevelServices[$script:ProtectionLevel]
+    $script:CurrentServicesToDisable = $ServicesToDisable[$script:ProtectionLevel]
+    
+    Write-Log "protection level: $script:ProtectionLevel"
+    Write-Log "allowed ports: $($script:AllowedPorts -join ', ')"
+    Write-Log "blocked ports: $($script:BlockedPorts -join ', ')"
+}
 
 $LogDir = Split-Path $LogFile
 if (!(Test-Path $LogDir)) {
@@ -144,7 +245,11 @@ function Handle-Error {
 }
 
 try {
+    Parse-Arguments $args
+
     Write-Log "starting windows protection script..."
+    Select-ProtectionLevel
+    Configure-ProtectionLevel
 
     if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
         Handle-Error "run as administrator"
@@ -173,31 +278,43 @@ try {
 
     Write-Log "configuring allowed ports..."
     
-    Write-Log "allowing http (80)..."
-    netsh advfirewall firewall add rule name="Allow HTTP" protocol=TCP dir=in localport=80 action=allow
-    if ($LASTEXITCODE -ne 0) { throw "failed to allow http" }
-
-    Write-Log "allowing https (443)..."
-    netsh advfirewall firewall add rule name="Allow HTTPS" protocol=TCP dir=in localport=443 action=allow
-    if ($LASTEXITCODE -ne 0) { throw "failed to allow https" }
-
-    $rdpEnabled = Get-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -ErrorAction SilentlyContinue
-    if ($rdpEnabled -and $rdpEnabled.fDenyTSConnections -eq 0) {
-        Write-Log "rdp enabled, allowing port 3389..."
-        netsh advfirewall firewall add rule name="Allow Remote Desktop" protocol=TCP dir=in localport=3389 action=allow
-        if ($LASTEXITCODE -ne 0) { throw "failed to allow rdp" }
-    } else {
-        Write-Log "rdp disabled, skipping"
+    foreach ($port in $AllowedPorts) {
+        switch ($port) {
+            80 {
+                Write-Log "allowing http (80)..."
+                netsh advfirewall firewall add rule name="Allow HTTP" protocol=TCP dir=in localport=80 action=allow
+                if ($LASTEXITCODE -ne 0) { throw "failed to allow http" }
+            }
+            443 {
+                Write-Log "allowing https (443)..."
+                netsh advfirewall firewall add rule name="Allow HTTPS" protocol=TCP dir=in localport=443 action=allow
+                if ($LASTEXITCODE -ne 0) { throw "failed to allow https" }
+            }
+            3389 {
+                $rdpEnabled = Get-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -ErrorAction SilentlyContinue
+                if ($rdpEnabled -and $rdpEnabled.fDenyTSConnections -eq 0) {
+                    Write-Log "allowing rdp (3389)..."
+                    netsh advfirewall firewall add rule name="Allow Remote Desktop" protocol=TCP dir=in localport=3389 action=allow
+                    if ($LASTEXITCODE -ne 0) { throw "failed to allow rdp" }
+                } else {
+                    Write-Log "rdp disabled, skipping port 3389"
+                }
+            }
+            default {
+                Write-Log "allowing port $port..."
+                netsh advfirewall firewall add rule name="Allow Port $port" protocol=TCP dir=in localport=$port action=allow
+                if ($LASTEXITCODE -ne 0) { Write-Log "WARNING: failed to allow port $port" "WARN" }
+            }
+        }
     }
 
     Write-Log "blocking attack ports..."
-    $attackPorts = @(135, 139, 445, 1433, 1434, 5985, 5986)
-    foreach ($port in $attackPorts) {
+    foreach ($port in $BlockedPorts) {
         netsh advfirewall firewall add rule name="Block Attack Port $port" protocol=TCP dir=in localport=$port action=block | Out-Null
     }
 
     Write-Log "configuring services..."
-    foreach ($serviceInfo in $ServicesToDisable) {
+    foreach ($serviceInfo in $CurrentServicesToDisable) {
         Set-ServiceSafely -ServiceInfo $serviceInfo -StartupType "Disabled" -Action "Stop"
     }
 
@@ -271,10 +388,11 @@ try {
     Write-Log "logs: $LogFile"
 
     Write-Host ""
-    Write-Host "✅ windows system protected" -ForegroundColor Green
+    Write-Host "[+] windows system protected" -ForegroundColor Green
+    Write-Host "• level: $ProtectionLevel" -ForegroundColor White
     Write-Host "• firewall: enabled, deny incoming" -ForegroundColor White
     Write-Host "• ports: $($AllowedPorts -join ', ')" -ForegroundColor White
-    Write-Host "• attack ports: blocked" -ForegroundColor White
+    Write-Host "• attack ports: $($BlockedPorts -join ', ')" -ForegroundColor White
     Write-Host "• services: unnecessary ones disabled" -ForegroundColor White
     Write-Host "• protocols: smbv1, netbios, llmnr disabled" -ForegroundColor White
     Write-Host "• backup: $BackupDir" -ForegroundColor White
