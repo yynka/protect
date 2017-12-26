@@ -43,9 +43,9 @@ parse_arguments() {
             echo "Usage: $0 [--maximum|--medium|--minimum]"
             echo ""
             echo "Protection Levels:"
-            echo "  --maximum  ${LEVEL_DESCRIPTIONS["maximum"]}"
-            echo "  --medium   ${LEVEL_DESCRIPTIONS["medium"]}"
-            echo "  --minimum  ${LEVEL_DESCRIPTIONS["minimum"]}"
+            echo "  --maximum  Full hardening - servers, high security"
+            echo "  --medium   Balanced security - workstations (recommended)"
+            echo "  --minimum  Basic protection - development, compatibility"
             echo ""
             echo "If no level is specified, interactive selection will be shown."
             exit 0
@@ -68,9 +68,9 @@ select_protection_level() {
     
     echo ""
     echo "Select Protection Level:"
-    echo "1) Maximum - ${LEVEL_DESCRIPTIONS["maximum"]}"
-    echo "2) Medium  - ${LEVEL_DESCRIPTIONS["medium"]}"  
-    echo "3) Minimum - ${LEVEL_DESCRIPTIONS["minimum"]}"
+    echo "1) Maximum - Full hardening - servers, high security"
+    echo "2) Medium  - Balanced security - workstations (recommended)"  
+    echo "3) Minimum - Basic protection - development, compatibility"
     echo ""
     
     while true; do

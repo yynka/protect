@@ -1,12 +1,12 @@
 <a id="top"></a>
 ```
      ██████╗ ██████╗  ██████╗ ████████╗███████╗ ██████╗████████╗  ⠀⠀⠀⢸⣦⡀⠀⠀⠀⠀⢀⡄
-     ██╔══██╗██╔══██╗██╔═══██╗╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝  ⠀⠀⠀⢸⣏⠻⣶⣤⡶⢾⡿⠁
-     ██████╔╝██████╔╝██║   ██║   ██║   █████╗  ██║        ██║    ⠀⠀⣀⣼⠷⠀⠀⠁⢀⣿⠃⠀
-     ██╔═══╝ ██╔══██╗██║   ██║   ██║   ██╔══╝  ██║        ██║    ⠴⣾⣯⣅⣀⠀⠀⠀⠈⢻⣦⡀
-     ██║     ██║  ██║╚██████╔╝   ██║   ███████╗╚██████╗   ██║    ⠀⠀⠀⠉⢻⡇⣤⣾⣿⣷⣿⣿
-     ╚═╝     ╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚══════╝ ╚═════╝   ╚═╝    ⠀⠀⠀⠀⠸⣿⡿⠏⠀⠀⠀⠀
-                                                                  ⠀⠀⠀⠀⠀⠟⠁⠀⠀⠀⠀⠀
+     ██╔══██╗██╔══██╗██╔═══██╗╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝  ⠀⠀⠀⢸⣏⠻⣶⣤⡶⢾⡿⠁⠀⢠⣄⡀⢀⣴
+     ██████╔╝██████╔╝██║   ██║   ██║   █████╗  ██║        ██║    ⠀⠀⣀⣼⠷⠀⠀⠁⢀⣿⠃⠀⠀⢀⣿⣿⣿⣇
+     ██╔═══╝ ██╔══██╗██║   ██║   ██║   ██╔══╝  ██║        ██║    ⠴⣾⣯⣅⣀⠀⠀⠀⠈⢻⣦⡀⠒⠻⠿⣿⡿⠿⠓⢀
+     ██║     ██║  ██║╚██████╔╝   ██║   ███████╗╚██████╗   ██║    ⠀⠀⠀⠉⢻⡇⣤⣾⣿⣷⣿⣿⣤⠀⠀⣿⠁⠀
+     ╚═╝     ╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚══════╝ ╚═════╝   ╚═╝    ⠀⠀⠀⠀⠸⣿⡿⠏⠀
+                                                                  ⠀⠀⠀⠀⠀⠟⠁⠀
 ```
 
 **Cross-Platform System Security Optimization & Hardening Tool**
@@ -25,6 +25,52 @@
 ▸ **Vulnerability Prevention** - Protects against common security vulnerabilities  
 ▸ **Automated Deployment** - One-command installation and configuration  
 ▸ **Cross-Platform** - Consistent security hardening across Windows, macOS, and Linux  
+
+## Protection Levels
+
+All scripts support three configurable protection levels with automatic or interactive selection:
+
+| Level | Description | Allowed Ports | Blocked Ports | Use Case |
+|-------|-------------|---------------|---------------|----------|
+| **Maximum** | Full hardening - servers, high security | SSH (22) only | 9 attack ports | Production servers, high-security environments |
+| **Medium** | Balanced security - workstations (recommended) | SSH, HTTP, HTTPS, RDP* | 5 common attacks | Workstations, general use (default) |
+| **Minimum** | Basic protection - development, compatibility | Above + dev ports (8080, 3000, 5000) | 3 basic threats | Development machines, compatibility needed |
+
+*RDP (3389) included on Windows when Remote Desktop is enabled
+
+### Usage Examples
+
+**Command Line Mode** (skips interactive menu):
+```bash
+# Linux/macOS
+sudo ./linux.sh --maximum
+sudo ./macos.sh --medium
+sudo ./linux.sh --minimum
+
+# Windows
+powershell -File windows.ps1 --maximum
+powershell -File windows.ps1 --medium
+powershell -File windows.ps1 --minimum
+```
+
+**Interactive Mode** (shows protection level menu):
+```bash
+# Linux/macOS - shows selection menu
+sudo ./linux.sh
+sudo ./macos.sh
+
+# Windows - shows selection menu
+powershell -File windows.ps1
+```
+
+**Help Information**:
+```bash
+sudo ./linux.sh --help
+sudo ./macos.sh --help  
+powershell -File windows.ps1 --help
+```
+
+For detailed protection level specifications and security considerations, see [GUIDE.md](GUIDE.md).
 
 ---
 

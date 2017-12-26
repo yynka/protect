@@ -62,17 +62,17 @@ function Parse-Arguments {
             "--maximum" { $script:ProtectionLevel = "maximum" }
             "--medium" { $script:ProtectionLevel = "medium" }
             "--minimum" { $script:ProtectionLevel = "minimum" }
-            "--help" -or "-h" {
-                Write-Host "Usage: powershell -File windows.ps1 [--maximum|--medium|--minimum]"
-                Write-Host ""
-                Write-Host "Protection Levels:"
-                Write-Host "  --maximum  $($LevelDescriptions['maximum'])"
-                Write-Host "  --medium   $($LevelDescriptions['medium'])"
-                Write-Host "  --minimum  $($LevelDescriptions['minimum'])"
-                Write-Host ""
-                Write-Host "If no level is specified, interactive selection will be shown."
-                exit 0
-            }
+                         "--help" -or "-h" {
+                 Write-Host "Usage: powershell -File windows.ps1 [--maximum|--medium|--minimum]"
+                 Write-Host ""
+                 Write-Host "Protection Levels:"
+                 Write-Host "  --maximum  Full hardening - servers, high security"
+                 Write-Host "  --medium   Balanced security - workstations (recommended)"
+                 Write-Host "  --minimum  Basic protection - development, compatibility"
+                 Write-Host ""
+                 Write-Host "If no level is specified, interactive selection will be shown."
+                 exit 0
+             }
             default {
                 Write-Host "Error: Unknown option $($Args[0])"
                 Write-Host "Use --help for usage information"
@@ -89,9 +89,9 @@ function Select-ProtectionLevel {
     
     Write-Host ""
     Write-Host "Select Protection Level:"
-    Write-Host "1) Maximum - $($LevelDescriptions['maximum'])"
-    Write-Host "2) Medium  - $($LevelDescriptions['medium'])"
-    Write-Host "3) Minimum - $($LevelDescriptions['minimum'])"
+    Write-Host "1) Maximum - Full hardening - servers, high security"
+    Write-Host "2) Medium  - Balanced security - workstations (recommended)"
+    Write-Host "3) Minimum - Basic protection - development, compatibility"
     Write-Host ""
     
     do {
