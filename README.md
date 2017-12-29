@@ -42,10 +42,15 @@ All scripts support three configurable protection levels with automatic or inter
 
 **Command Line Mode** (skips interactive menu):
 ```bash
-# Linux/macOS
+# Linux
 sudo ./linux.sh --maximum
-sudo ./macos.sh --medium
+sudo ./linux.sh --medium
 sudo ./linux.sh --minimum
+
+# macOS
+sudo ./macos.sh --maximum
+sudo ./macos.sh --medium
+sudo ./macos.sh --minimum
 
 # Windows
 powershell -File windows.ps1 --maximum
@@ -53,10 +58,12 @@ powershell -File windows.ps1 --medium
 powershell -File windows.ps1 --minimum
 ```
 
-**Interactive Mode** (shows protection level menu):
+**Interactive Mode** (shows selection menu):
 ```bash
-# Linux/macOS - shows selection menu
+# Linux - shows selection menu
 sudo ./linux.sh
+
+# macOS - shows selection menu
 sudo ./macos.sh
 
 # Windows - shows selection menu
@@ -65,12 +72,167 @@ powershell -File windows.ps1
 
 **Help Information**:
 ```bash
+# Linux
 sudo ./linux.sh --help
-sudo ./macos.sh --help  
+
+# macOS
+sudo ./macos.sh --help
+
+# Windows
 powershell -File windows.ps1 --help
 ```
 
+**Status Monitoring**:
+```bash
+# Linux
+sudo ./linux.sh --status
+
+# macOS
+sudo ./macos.sh --status
+
+# Windows
+powershell -File windows.ps1 --status
+```
+
 For detailed protection level specifications and security considerations, see [GUIDE.md](GUIDE.md).
+
+---
+
+## Status Commands
+
+Monitor your system's current protection status and security configuration with built-in status commands.
+
+### Overview
+
+The status command provides a comprehensive security assessment including:
+
+▸ **Firewall Status** - Active rules, profiles, and configuration  
+▸ **Service Status** - Critical system services and their states  
+▸ **Network Security** - IP forwarding, protocol settings, and vulnerabilities  
+▸ **Security Assessment** - Overall security score and recommendations  
+▸ **Backup Information** - Available configuration backups and restore options  
+▸ **Log Analysis** - Recent activity and security events  
+
+### Usage Examples
+
+**Quick Status Check** (all platforms):
+```bash
+# Linux
+sudo ./linux.sh --status
+
+# macOS  
+sudo ./macos.sh --status
+
+# Windows (Command Prompt as Administrator)
+powershell -File windows.ps1 --status
+```
+
+### Status Output Examples
+
+**Linux Status Output:**
+```
+=== Linux Protection Status ===
+
+[FIREWALL] Status:
+  [+] UFW Firewall: ACTIVE
+  [i] Active Rules:
+    [1] 22/tcp                     ALLOW IN    Anywhere
+    [2] 80/tcp                     ALLOW IN    Anywhere  
+    [3] 443/tcp                    ALLOW IN    Anywhere
+  [>] Default Policy:
+    Default: deny (incoming), allow (outgoing), disabled (routed)
+
+[SYSTEM] Configuration:
+  [+] IPv4 Forwarding: DISABLED (secure)
+  [+] IPv6 Forwarding: DISABLED (secure) 
+  [+] Source Route: DISABLED (secure)
+  [+] SYN Cookies: ENABLED (secure)
+  [+] ICMP Redirects: DISABLED (secure)
+
+[SERVICES] Status:
+  [+] SSH Service: RUNNING
+  [+] Fail2Ban: RUNNING (intrusion prevention)
+
+[SECURITY] Assessment:
+  [+] Security Level: HIGH (6/6)
+  [+] System appears to be well protected
+```
+
+**macOS Status Output:**
+```
+=== macOS Protection Status ===
+
+[FIREWALL] Status:
+  [+] PF Firewall: ENABLED
+  [i] Active Rules: 12
+  [>] Allowed Ports:
+    pass in proto tcp from any to any port { 22, 80, 443 } keep state
+  [x] Blocked Ports:
+    block log quick proto tcp from any to any port { 135, 139, 445 }
+
+[SYSTEM] Configuration:
+  [+] IP Forwarding: DISABLED (secure)
+  [+] IPv6 Forwarding: DISABLED (secure)
+  [+] Source Routing: DISABLED (secure)
+  [+] SYN Cookies: ENABLED (secure)
+
+[SECURITY] Assessment:
+  [+] Security Level: HIGH (5/5)
+  [+] System appears to be well protected
+```
+
+**Windows Status Output:**
+```
+=== Windows Protection Status ===
+
+[FIREWALL] Status:
+  [+] Domain Profile: ENABLED
+  [+] Private Profile: ENABLED
+  [+] Public Profile: ENABLED
+  [i] Inbound Rules: 47
+  [i] Outbound Rules: 23
+  [>] Custom Protection Rules:
+    [+] Allow HTTP
+    [+] Allow HTTPS
+    [+] Block Attack Port 135
+
+[DEFENDER] Status:
+  [>] Real-time Protection: ENABLED
+  [>] Auto Sample Submission: ENABLED
+  [i] Last Quick Scan: 12/15/2023 10:30:00 AM
+
+[SERVICES] Status:
+  [>] Windows Firewall: Running (Auto)
+  [>] Windows Defender: Running (Auto)
+  [>] Remote Registry: Stopped (Disabled)
+  [>] Telnet: Stopped (Disabled)
+
+[NETWORK] Configuration:
+  [>] IP Forwarding: DISABLED (secure)
+  [>] SMBv1 Protocol: DISABLED (secure)
+  [>] LLMNR: DISABLED (secure)
+
+[SECURITY] Assessment:
+  [+] Security Level: HIGH (7/8)
+  [+] System appears to be well protected
+```
+
+### Status Command Benefits
+
+▪ **Real-time Monitoring** - Instant visibility into current security posture  
+▪ **Security Scoring** - Quantified assessment with actionable recommendations  
+▪ **Configuration Validation** - Verify protection settings are active and correct  
+▪ **Troubleshooting** - Identify security gaps or configuration issues  
+▪ **Compliance Checking** - Ensure systems meet security requirements  
+▪ **Backup Tracking** - Monitor available configuration backups and restore points  
+
+### Security Levels
+
+| Level | Score Range | Indication | Action Required |
+|-------|-------------|------------|-----------------|
+| **HIGH** | 80-100% | [+] Well Protected | Continue monitoring |
+| **MEDIUM** | 40-79% | [!] Partially Protected | Run protection script |
+| **LOW** | 0-39% | [-] Vulnerable | Immediate protection needed |
 
 ---
 
@@ -94,15 +256,15 @@ powershell -Command "Invoke-WebRequest -Uri https://github.com/git-for-windows/g
 .\Git-64-bit.exe /VERYSILENT /NORESTART
 
 # Download protection script
-curl -o win.ps1 https://raw.githubusercontent.com/boolskii/protection/main/win.ps1
+curl -o windows.ps1 https://raw.githubusercontent.com/boolskii/protection/main/windows.ps1
 
 # Run protection script
-powershell -ExecutionPolicy Bypass -File .\win.ps1
+powershell -ExecutionPolicy Bypass -File .\windows.ps1
 ```
 
 ### Quick Installation (One-Line)
 ```powershell
-powershell -Command "Invoke-WebRequest -Uri https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe -OutFile Git-64-bit.exe; .\Git-64-bit.exe /VERYSILENT /NORESTART; Start-Sleep 30; curl -o win.ps1 https://raw.githubusercontent.com/boolskii/protection/main/win.ps1; powershell -ExecutionPolicy Bypass -File .\win.ps1"
+powershell -Command "Invoke-WebRequest -Uri https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe -OutFile Git-64-bit.exe; .\Git-64-bit.exe /VERYSILENT /NORESTART; Start-Sleep 30; curl -o windows.ps1 https://raw.githubusercontent.com/boolskii/protection/main/windows.ps1; powershell -ExecutionPolicy Bypass -File .\windows.ps1"
 ```
 
 ※ **Note:** Requires running Command Prompt as Administrator for system-level security modifications
@@ -129,16 +291,16 @@ powershell -Command "Invoke-WebRequest -Uri https://github.com/git-for-windows/g
 brew install git
 
 # Download protection script
-curl -o mac.sh https://raw.githubusercontent.com/boolskii/protection/main/mac.sh
+curl -o macos.sh https://raw.githubusercontent.com/boolskii/protection/main/macos.sh
 
 # Make script executable and run
-chmod +x mac.sh
-sudo ./mac.sh
+chmod +x macos.sh
+sudo ./macos.sh
 ```
 
 ### Quick Installation (One-Line)
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && brew install git && curl -o mac.sh https://raw.githubusercontent.com/boolskii/protection/main/mac.sh && chmod +x mac.sh && sudo ./mac.sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && brew install git && curl -o macos.sh https://raw.githubusercontent.com/boolskii/protection/main/macos.sh && chmod +x macos.sh && sudo ./macos.sh
 ```
 
 ※ **Note:** Requires running commands with `sudo` for system security configuration changes
@@ -165,25 +327,25 @@ sudo apt-get update
 sudo apt-get install git -y
 
 # Download protection script
-curl -o lin.sh https://raw.githubusercontent.com/boolskii/protection/main/lin.sh
+curl -o linux.sh https://raw.githubusercontent.com/boolskii/protection/main/linux.sh
 
 # Make script executable and run
-chmod +x lin.sh
-sudo ./lin.sh
+chmod +x linux.sh
+sudo ./linux.sh
 ```
 
 ### Quick Installation (One-Line)
 ```bash
-sudo apt-get update && sudo apt-get install git -y && curl -o lin.sh https://raw.githubusercontent.com/boolskii/protection/main/lin.sh && chmod +x lin.sh && sudo ./lin.sh
+sudo apt-get update && sudo apt-get install git -y && curl -o linux.sh https://raw.githubusercontent.com/boolskii/protection/main/linux.sh && chmod +x linux.sh && sudo ./linux.sh
 ```
 
 ### Alternative Distributions
 ```bash
 # For CentOS/RHEL/Fedora
-sudo yum update && sudo yum install git -y && curl -o lin.sh https://raw.githubusercontent.com/boolskii/protection/main/lin.sh && chmod +x lin.sh && sudo ./lin.sh
+sudo yum update && sudo yum install git -y && curl -o linux.sh https://raw.githubusercontent.com/boolskii/protection/main/linux.sh && chmod +x linux.sh && sudo ./linux.sh
 
 # For Arch Linux
-sudo pacman -Syu && sudo pacman -S git && curl -o lin.sh https://raw.githubusercontent.com/boolskii/protection/main/lin.sh && chmod +x lin.sh && sudo ./lin.sh
+sudo pacman -Syu && sudo pacman -S git && curl -o linux.sh https://raw.githubusercontent.com/boolskii/protection/main/linux.sh && chmod +x linux.sh && sudo ./linux.sh
 ```
 
 ※ **Note:** Requires running commands with `sudo` for system-level security hardening
@@ -199,15 +361,16 @@ All platforms follow the same logical sequence:
 |------|-------------|---------|-------|-------|
 | **1** | Open Terminal/Command Prompt | `cmd` (Admin) | Terminal | `Ctrl+Alt+T` |
 | **2** | Install Git | Download installer | `brew install git` | `apt-get install git` |
-| **3** | Download Script | `curl -o win.ps1 [URL]` | `curl -o mac.sh [URL]` | `curl -o lin.sh [URL]` |
-| **4** | Execute Protection | `powershell -File win.ps1` | `sudo ./mac.sh` | `sudo ./lin.sh` |
+| **3** | Download Script | `curl -o windows.ps1 [URL]` | `curl -o macos.sh [URL]` | `curl -o linux.sh [URL]` |
+| **4** | Execute Protection | `powershell -File windows.ps1` | `sudo ./macos.sh` | `sudo ./linux.sh` |
+| **5** | Monitor Status | `powershell -File windows.ps1 --status` | `sudo ./macos.sh --status` | `sudo ./linux.sh --status` |
 
 ### Script Locations
 | Platform | Script Name | Repository URL |
 |----------|-------------|----------------|
-| **Windows** | `win.ps1` | `https://raw.githubusercontent.com/boolskii/protection/main/win.ps1` |
-| **macOS** | `mac.sh` | `https://raw.githubusercontent.com/boolskii/protection/main/mac.sh` |
-| **Linux** | `lin.sh` | `https://raw.githubusercontent.com/boolskii/protection/main/lin.sh` |
+| **Windows** | `windows.ps1` | `https://raw.githubusercontent.com/boolskii/protection/main/windows.ps1` |
+| **macOS** | `macos.sh` | `https://raw.githubusercontent.com/boolskii/protection/main/macos.sh` |
+| **Linux** | `linux.sh` | `https://raw.githubusercontent.com/boolskii/protection/main/linux.sh` |
 
 ## Usage Examples
 
@@ -216,20 +379,20 @@ All platforms follow the same logical sequence:
 # Windows (Command Prompt as Administrator)
 powershell -Command "Invoke-WebRequest -Uri https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe -OutFile Git-64-bit.exe"
 .\Git-64-bit.exe /VERYSILENT /NORESTART
-curl -o win.ps1 https://raw.githubusercontent.com/boolskii/protection/main/win.ps1
-powershell -ExecutionPolicy Bypass -File .\win.ps1
+curl -o windows.ps1 https://raw.githubusercontent.com/boolskii/protection/main/windows.ps1
+powershell -ExecutionPolicy Bypass -File .\windows.ps1
 
 # macOS (Terminal)
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 brew install git
-curl -o mac.sh https://raw.githubusercontent.com/boolskii/protection/main/mac.sh
-sudo ./mac.sh
+curl -o macos.sh https://raw.githubusercontent.com/boolskii/protection/main/macos.sh
+sudo ./macos.sh
 
 # Linux (Terminal)
 sudo apt-get update
 sudo apt-get install git -y
-curl -o lin.sh https://raw.githubusercontent.com/boolskii/protection/main/lin.sh
-sudo ./lin.sh
+curl -o linux.sh https://raw.githubusercontent.com/boolskii/protection/main/linux.sh
+sudo ./linux.sh
 ```
 
 ### Verification Commands
@@ -239,10 +402,23 @@ git --version
 
 # Verify script download
 # Windows
-dir *.ps1
+dir windows.ps1
 
-# macOS/Linux
-ls -la *.sh
+# macOS
+ls -la macos.sh
+
+# Linux
+ls -la linux.sh
+
+# Check protection status after installation
+# Windows
+powershell -File windows.ps1 --status
+
+# macOS
+sudo ./macos.sh --status
+
+# Linux
+sudo ./linux.sh --status
 ```
 
 ## Technical Implementation
@@ -383,4 +559,3 @@ lsb_release -a
 [MIT License](LICENSE) - Feel free to use and modify as needed.
 
 **※ Security Note:** This tool performs system-level security modifications and requires administrative privileges on all platforms. Test thoroughly in a controlled environment before deploying in production. Use responsibly and in compliance with your organization's security policies.
-```

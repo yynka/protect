@@ -1,8 +1,5 @@
 # windows system protection
 
-$ErrorActionPreference = "Stop"
-Set-StrictMode -Version Latest
-
 $LogFile = "C:\temp\protect_script.log"
 $BackupDir = "C:\temp\firewall_backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
 
@@ -54,6 +51,10 @@ $AllowedPorts = @()
 $BlockedPorts = @()
 $CurrentServicesToDisable = @()
 
+# Enable strict error handling after variable declarations
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+
 function Parse-Arguments {
     param([string[]]$Args)
     
@@ -62,17 +63,24 @@ function Parse-Arguments {
             "--maximum" { $script:ProtectionLevel = "maximum" }
             "--medium" { $script:ProtectionLevel = "medium" }
             "--minimum" { $script:ProtectionLevel = "minimum" }
-                         "--help" -or "-h" {
-                 Write-Host "Usage: powershell -File windows.ps1 [--maximum|--medium|--minimum]"
-                 Write-Host ""
-                 Write-Host "Protection Levels:"
-                 Write-Host "  --maximum  Full hardening - servers, high security"
-                 Write-Host "  --medium   Balanced security - workstations (recommended)"
-                 Write-Host "  --minimum  Basic protection - development, compatibility"
-                 Write-Host ""
-                 Write-Host "If no level is specified, interactive selection will be shown."
-                 exit 0
-             }
+            "--status" {
+                Show-Status
+                exit 0
+            }
+            "--help" -or "-h" {
+                Write-Host "Usage: powershell -File windows.ps1 [--maximum|--medium|--minimum|--status]"
+                Write-Host ""
+                Write-Host "Protection Levels:"
+                Write-Host "  --maximum  Full hardening - servers, high security"
+                Write-Host "  --medium   Balanced security - workstations (recommended)"
+                Write-Host "  --minimum  Basic protection - development, compatibility"
+                Write-Host ""
+                Write-Host "Status Commands:"
+                Write-Host "  --status   Show current protection status and configuration"
+                Write-Host ""
+                Write-Host "If no level is specified, interactive selection will be shown."
+                exit 0
+            }
             default {
                 Write-Host "Error: Unknown option $($Args[0])"
                 Write-Host "Use --help for usage information"
@@ -88,19 +96,39 @@ function Select-ProtectionLevel {
     }
     
     Write-Host ""
-    Write-Host "Select Protection Level:"
+    Write-Host "Available Commands:"
     Write-Host "1) Maximum - Full hardening - servers, high security"
     Write-Host "2) Medium  - Balanced security - workstations (recommended)"
     Write-Host "3) Minimum - Basic protection - development, compatibility"
+    Write-Host "4) Status  - Show current protection status and configuration"
+    Write-Host "5) Help    - Show usage information and exit"
     Write-Host ""
     
     do {
-        $choice = Read-Host "Enter choice [1-3]"
+        $choice = Read-Host "Enter choice [1-5]"
         switch ($choice) {
             "1" { $script:ProtectionLevel = "maximum"; break }
             "2" { $script:ProtectionLevel = "medium"; break }  
             "3" { $script:ProtectionLevel = "minimum"; break }
-            default { Write-Host "Invalid choice. Please enter 1, 2, or 3." }
+            "4" { 
+                Show-Status
+                exit 0
+            }
+            "5" {
+                Write-Host "Usage: powershell -File windows.ps1 [--maximum|--medium|--minimum|--status]"
+                Write-Host ""
+                Write-Host "Protection Levels:"
+                Write-Host "  --maximum  Full hardening - servers, high security"
+                Write-Host "  --medium   Balanced security - workstations (recommended)"
+                Write-Host "  --minimum  Basic protection - development, compatibility"
+                Write-Host ""
+                Write-Host "Status Commands:"
+                Write-Host "  --status   Show current protection status and configuration"
+                Write-Host ""
+                Write-Host "If no level is specified, interactive selection will be shown."
+                exit 0
+            }
+            default { Write-Host "Invalid choice. Please enter 1, 2, 3, 4, or 5." }
         }
     } while ($script:ProtectionLevel -eq "")
 }
@@ -113,6 +141,252 @@ function Configure-ProtectionLevel {
     Write-Log "protection level: $script:ProtectionLevel"
     Write-Log "allowed ports: $($script:AllowedPorts -join ', ')"
     Write-Log "blocked ports: $($script:BlockedPorts -join ', ')"
+}
+
+function Show-Status {
+    Write-Host ""
+    Write-Host "=== Windows Protection Status ===" -ForegroundColor Cyan
+    Write-Host ""
+    
+    # check if running as administrator
+    $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
+    if (-not $isAdmin) {
+        Write-Host "Note: Run as Administrator for complete status information" -ForegroundColor Yellow
+        Write-Host ""
+    }
+    
+    # check windows firewall status
+    Write-Host "[FIREWALL] Status:" -ForegroundColor Yellow
+    try {
+        $firewallProfiles = netsh advfirewall show allprofiles state | Select-String "State"
+        $domainState = ($firewallProfiles[0] -split "\s+")[1]
+        $privateState = ($firewallProfiles[1] -split "\s+")[1] 
+        $publicState = ($firewallProfiles[2] -split "\s+")[1]
+        
+        Write-Host "  [+] Domain Profile: " -NoNewline
+        if ($domainState -eq "ON") { Write-Host "ENABLED" -ForegroundColor Green } else { Write-Host "DISABLED" -ForegroundColor Red }
+        
+        Write-Host "  [+] Private Profile: " -NoNewline  
+        if ($privateState -eq "ON") { Write-Host "ENABLED" -ForegroundColor Green } else { Write-Host "DISABLED" -ForegroundColor Red }
+        
+        Write-Host "  [+] Public Profile: " -NoNewline
+        if ($publicState -eq "ON") { Write-Host "ENABLED" -ForegroundColor Green } else { Write-Host "DISABLED" -ForegroundColor Red }
+        
+        # show firewall rules
+        $inboundRules = (netsh advfirewall firewall show rule dir=in | Select-String "Rule Name:" | Measure-Object).Count
+        $outboundRules = (netsh advfirewall firewall show rule dir=out | Select-String "Rule Name:" | Measure-Object).Count
+        Write-Host "  [i] Inbound Rules: $inboundRules"
+        Write-Host "  [i] Outbound Rules: $outboundRules"
+        
+        # show specific rules we manage
+        $customRules = @("Allow HTTP", "Allow HTTPS", "Allow Remote Desktop", "Block Attack Port*")
+        Write-Host "  [>] Custom Protection Rules:"
+        foreach ($ruleName in $customRules) {
+            $ruleExists = netsh advfirewall firewall show rule name="$ruleName" 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "    [+] $ruleName" -ForegroundColor Green
+            }
+        }
+        
+    } catch {
+        Write-Host "  [-] Could not retrieve firewall status" -ForegroundColor Red
+    }
+    
+    Write-Host ""
+    
+    # check windows defender status
+    Write-Host "[DEFENDER] Status:" -ForegroundColor Yellow
+    try {
+        $defenderStatus = Get-MpComputerStatus -ErrorAction SilentlyContinue
+        if ($defenderStatus) {
+            Write-Host "  [>] Real-time Protection: " -NoNewline
+            if ($defenderStatus.RealTimeProtectionEnabled) { Write-Host "ENABLED" -ForegroundColor Green } else { Write-Host "DISABLED" -ForegroundColor Red }
+            
+            Write-Host "  [>] Auto Sample Submission: " -NoNewline  
+            if ($defenderStatus.SubmitSamplesConsent -ne "NeverSend") { Write-Host "ENABLED" -ForegroundColor Green } else { Write-Host "DISABLED" -ForegroundColor Yellow }
+            
+            Write-Host "  [i] Last Quick Scan: $($defenderStatus.QuickScanStartTime)"
+            Write-Host "  [i] Last Full Scan: $($defenderStatus.FullScanStartTime)"
+        } else {
+            Write-Host "  [?] Windows Defender status unavailable"
+        }
+    } catch {
+        Write-Host "  [?] Could not retrieve Windows Defender status"
+    }
+    
+    Write-Host ""
+    
+    # check system services
+    Write-Host "[SERVICES] Status:" -ForegroundColor Yellow
+    $criticalServices = @(
+        @{Name="Windows Firewall"; ServiceName="MpsSvc"},
+        @{Name="Windows Defender"; ServiceName="WinDefend"},
+        @{Name="Remote Desktop"; ServiceName="TermService"},
+        @{Name="Remote Registry"; ServiceName="RemoteRegistry"},
+        @{Name="Telnet"; ServiceName="TlntSvr"},
+        @{Name="FTP Server"; ServiceName="FTPSVC"},
+        @{Name="Print Spooler"; ServiceName="Spooler"}
+    )
+    
+    foreach ($svc in $criticalServices) {
+        $service = Get-Service -Name $svc.ServiceName -ErrorAction SilentlyContinue
+        if ($service) {
+            $startup = (Get-WmiObject -Class Win32_Service -Filter "Name='$($svc.ServiceName)'").StartMode
+            Write-Host "  [>] $($svc.Name): " -NoNewline
+            
+            if ($service.Status -eq "Running") {
+                Write-Host "$($service.Status)" -ForegroundColor Green -NoNewline
+            } elseif ($service.Status -eq "Stopped") {
+                Write-Host "$($service.Status)" -ForegroundColor Yellow -NoNewline  
+            } else {
+                Write-Host "$($service.Status)" -ForegroundColor Red -NoNewline
+            }
+            Write-Host " ($startup)"
+        }
+    }
+    
+    Write-Host ""
+    
+    # check network configuration
+    Write-Host "[NETWORK] Configuration:" -ForegroundColor Yellow
+    try {
+        # check ip forwarding
+        $adapters = Get-NetAdapter -Physical | Where-Object {$_.Status -eq "Up"}
+        $forwardingEnabled = $false
+        foreach ($adapter in $adapters) {
+            $forwarding = Get-NetIPInterface -InterfaceIndex $adapter.InterfaceIndex | Select-Object -First 1
+            if ($forwarding.Forwarding -eq "Enabled") {
+                $forwardingEnabled = $true
+                break
+            }
+        }
+        
+        Write-Host "  [>] IP Forwarding: " -NoNewline
+        if ($forwardingEnabled) { Write-Host "ENABLED (potential risk)" -ForegroundColor Red } else { Write-Host "DISABLED (secure)" -ForegroundColor Green }
+        
+        # check smbv1
+        $smbv1 = Get-WindowsOptionalFeature -Online -FeatureName smb1protocol -ErrorAction SilentlyContinue
+        if ($smbv1) {
+            Write-Host "  [>] SMBv1 Protocol: " -NoNewline
+            if ($smbv1.State -eq "Enabled") { Write-Host "ENABLED (security risk)" -ForegroundColor Red } else { Write-Host "DISABLED (secure)" -ForegroundColor Green }
+        }
+        
+        # check llmnr
+        $llmnr = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows NT\DNSClient" -Name "EnableMulticast" -ErrorAction SilentlyContinue
+        Write-Host "  [>] LLMNR: " -NoNewline
+        if ($llmnr -and $llmnr.EnableMulticast -eq 0) { Write-Host "DISABLED (secure)" -ForegroundColor Green } else { Write-Host "ENABLED (potential risk)" -ForegroundColor Yellow }
+        
+    } catch {
+        Write-Host "  [?] Could not retrieve network configuration"
+    }
+    
+    Write-Host ""
+    
+    # check for backups
+    Write-Host "[BACKUP] Information:" -ForegroundColor Yellow
+    $backupDirs = Get-ChildItem "C:\temp" -Directory -Name "firewall_backup_*" -ErrorAction SilentlyContinue | Select-Object -First 5
+    if ($backupDirs) {
+        Write-Host "  [i] Recent Backups Found:"
+        foreach ($backupDir in $backupDirs) {
+            $backupDate = $backupDir -replace "firewall_backup_", "" -replace "_", " "
+            Write-Host "    [*] $backupDate - C:\temp\$backupDir" -ForegroundColor Cyan
+        }
+    } else {
+        Write-Host "  [i] No backups found in C:\temp"
+    }
+    
+    Write-Host ""
+    
+    # check log file  
+    Write-Host "[LOGS] Information:" -ForegroundColor Yellow
+    if (Test-Path $LogFile) {
+        $logSize = [math]::Round((Get-Item $LogFile).Length / 1KB, 2)
+        $lastEntry = Get-Content $LogFile -Tail 1 | ForEach-Object { ($_ -split ": ")[0] }
+        Write-Host "  [i] Log File: $LogFile ($logSize KB)"
+        Write-Host "  [i] Last Activity: $lastEntry"
+    } else {
+        Write-Host "  [i] Log File: Not found"
+    }
+    
+    Write-Host ""
+    
+    # overall security assessment
+    Write-Host "[SECURITY] Assessment:" -ForegroundColor Yellow
+    
+    # calculate security score
+    $score = 0
+    $maxScore = 8
+    
+    # firewall enabled (all profiles)
+    try {
+        $firewallProfiles = netsh advfirewall show allprofiles state | Select-String "State"
+        if ($firewallProfiles -and ($firewallProfiles | Where-Object { $_ -match "OFF" }).Count -eq 0) {
+            $score += 2
+        }
+    } catch { }
+    
+    # windows defender active
+    try {
+        $defenderStatus = Get-MpComputerStatus -ErrorAction SilentlyContinue
+        if ($defenderStatus -and $defenderStatus.RealTimeProtectionEnabled) {
+            $score += 2
+        }
+    } catch { }
+    
+    # ip forwarding disabled  
+    try {
+        $adapters = Get-NetAdapter -Physical | Where-Object {$_.Status -eq "Up"}
+        $forwardingDisabled = $true
+        foreach ($adapter in $adapters) {
+            $forwarding = Get-NetIPInterface -InterfaceIndex $adapter.InterfaceIndex | Select-Object -First 1
+            if ($forwarding.Forwarding -eq "Enabled") {
+                $forwardingDisabled = $false
+                break
+            }
+        }
+        if ($forwardingDisabled) { $score += 1 }
+    } catch { }
+    
+    # smbv1 disabled
+    try {
+        $smbv1 = Get-WindowsOptionalFeature -Online -FeatureName smb1protocol -ErrorAction SilentlyContinue
+        if ($smbv1 -and $smbv1.State -ne "Enabled") {
+            $score += 1
+        }
+    } catch { }
+    
+    # llmnr disabled
+    try {
+        $llmnr = Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows NT\DNSClient" -Name "EnableMulticast" -ErrorAction SilentlyContinue
+        if ($llmnr -and $llmnr.EnableMulticast -eq 0) {
+            $score += 1
+        }
+    } catch { }
+    
+    # unnecessary services stopped
+    $unnecessaryServices = @("RemoteRegistry", "TlntSvr", "FTPSVC")
+    $stoppedCount = 0
+    foreach ($svcName in $unnecessaryServices) {
+        $service = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+        if ($service -and $service.Status -eq "Stopped") {
+            $stoppedCount++
+        }
+    }
+    if ($stoppedCount -eq $unnecessaryServices.Count) { $score += 1 }
+    
+    # display security level
+    if ($score -ge 6) {
+        Write-Host "  [+] Security Level: HIGH ($score/$maxScore)" -ForegroundColor Green
+        Write-Host "  [+] System appears to be well protected" -ForegroundColor Green
+    } elseif ($score -ge 3) {
+        Write-Host "  [!] Security Level: MEDIUM ($score/$maxScore)" -ForegroundColor Yellow
+        Write-Host "  [!] Consider running protection script to improve security" -ForegroundColor Yellow
+    } else {
+        Write-Host "  [-] Security Level: LOW ($score/$maxScore)" -ForegroundColor Red
+        Write-Host "  [-] System needs protection - run as Administrator: powershell -File windows.ps1" -ForegroundColor Red
+    }
+    
+    Write-Host ""
 }
 
 $LogDir = Split-Path $LogFile

@@ -1,32 +1,176 @@
 #!/bin/bash
 
-set -euo pipefail
-
 LOG_FILE="/var/log/protect_script.log"
 BACKUP_DIR="/tmp/pf_backup_$(date +%Y%m%d_%H%M%S)"
-
-# Protection level configurations
-declare -A LEVEL_PORTS=(
-    ["maximum"]="22"
-    ["medium"]="22, 80, 443"
-    ["minimum"]="22, 80, 443, 8080, 3000, 5000"
-)
-
-declare -A LEVEL_SERVICES=(
-    ["maximum"]="135, 139, 445, 1433, 3389, 5985, 5986, 1723, 161"
-    ["medium"]="135, 139, 445, 1433, 3389"
-    ["minimum"]="135, 139, 445"
-)
-
-declare -A LEVEL_DESCRIPTIONS=(
-    ["maximum"]="Full hardening - servers, high security"
-    ["medium"]="Balanced security - workstations (recommended)"
-    ["minimum"]="Basic protection - development, compatibility"
-)
 
 PROTECTION_LEVEL=""
 ALLOWED_PORTS_STR=""
 BLOCKED_PORTS_STR=""
+
+# Protection level configuration functions (bash 3.x compatible)
+get_level_ports() {
+    case "$1" in
+        "maximum") echo "22" ;;
+        "medium") echo "22, 80, 443" ;;
+        "minimum") echo "22, 80, 443, 8080, 3000, 5000" ;;
+    esac
+}
+
+get_level_services() {
+    case "$1" in
+        "maximum") echo "135, 139, 445, 1433, 3389, 5985, 5986, 1723, 161" ;;
+        "medium") echo "135, 139, 445, 1433, 3389" ;;
+        "minimum") echo "135, 139, 445" ;;
+    esac
+}
+
+get_level_description() {
+    case "$1" in
+        "maximum") echo "Full hardening - servers, high security" ;;
+        "medium") echo "Balanced security - workstations (recommended)" ;;
+        "minimum") echo "Basic protection - development, compatibility" ;;
+    esac
+}
+
+# Enable strict error handling after variable declarations
+set -euo pipefail
+
+show_status() {
+    echo ""
+    echo "=== macOS Protection Status ==="
+    echo ""
+    
+    # check if running as root for full status
+    if [ "$EUID" -ne 0 ]; then
+        echo "Note: Run with sudo for complete status information"
+        echo ""
+    fi
+    
+    # check pf (packet filter) status
+    echo "[FIREWALL] Status:"
+    if command -v pfctl &> /dev/null; then
+        if pfctl -si 2>/dev/null | grep -q "Status: Enabled"; then
+            echo "  [+] PF Firewall: ENABLED"
+            
+            # show active rules count
+            rule_count=$(pfctl -sr 2>/dev/null | wc -l | xargs)
+            echo "  [i] Active Rules: $rule_count"
+            
+            # show allowed ports
+            echo "  [>] Allowed Ports:"
+            pfctl -sr 2>/dev/null | grep "pass in" | grep "port" | sed 's/^/    /' || echo "    No specific port rules found"
+            
+            # show blocked ports
+            echo "  [x] Blocked Ports:"
+            pfctl -sr 2>/dev/null | grep "block" | grep "port" | sed 's/^/    /' || echo "    No specific block rules found"
+            
+        else
+            echo "  [-] PF Firewall: DISABLED"
+        fi
+    else
+        echo "  [?] pfctl not available"
+    fi
+    
+    echo ""
+    
+    # check system configuration
+    echo "[SYSTEM] Configuration:"
+    
+    # check ip forwarding
+    if sysctl net.inet.ip.forwarding 2>/dev/null | grep -q "net.inet.ip.forwarding: 0"; then
+        echo "  [+] IP Forwarding: DISABLED (secure)"
+    else
+        echo "  [!] IP Forwarding: ENABLED (potential risk)"
+    fi
+    
+    # check ipv6 forwarding  
+    if sysctl net.inet6.ip6.forwarding 2>/dev/null | grep -q "net.inet6.ip6.forwarding: 0"; then
+        echo "  [+] IPv6 Forwarding: DISABLED (secure)"
+    else
+        echo "  [!] IPv6 Forwarding: ENABLED (potential risk)"
+    fi
+    
+    # check source routing
+    if sysctl net.inet.ip.sourceroute 2>/dev/null | grep -q "net.inet.ip.sourceroute: 0"; then
+        echo "  [+] Source Routing: DISABLED (secure)"
+    else
+        echo "  [!] Source Routing: ENABLED (potential risk)"
+    fi
+    
+    # check syn cookies if available
+    if sysctl net.inet.tcp.syncookies 2>/dev/null | grep -q "net.inet.tcp.syncookies: 1"; then
+        echo "  [+] SYN Cookies: ENABLED (secure)"
+    elif sysctl net.inet.tcp.syncookies >/dev/null 2>&1; then
+        echo "  [!] SYN Cookies: DISABLED (potential risk)"
+    fi
+    
+    echo ""
+    
+    # check for backups
+    echo "[BACKUP] Information:"
+    backup_dirs=$(find /tmp -name "pf_backup_*" -type d 2>/dev/null | head -5)
+    if [ -n "$backup_dirs" ]; then
+        echo "  [i] Recent Backups Found:"
+        echo "$backup_dirs" | while read -r backup_dir; do
+            backup_date=$(basename "$backup_dir" | sed 's/pf_backup_//' | sed 's/_/ /')
+            echo "    [*] $backup_date - $backup_dir"
+        done
+    else
+        echo "  [i] No backups found in /tmp"
+    fi
+    
+    echo ""
+    
+    # check log file
+    echo "[LOGS] Information:"
+    if [ -f "$LOG_FILE" ]; then
+        log_size=$(du -h "$LOG_FILE" 2>/dev/null | cut -f1)
+        last_entry=$(tail -n 1 "$LOG_FILE" 2>/dev/null | cut -d: -f1-2)
+        echo "  [i] Log File: $LOG_FILE ($log_size)"
+        echo "  [i] Last Activity: $last_entry"
+    else
+        echo "  [i] Log File: Not found"
+    fi
+    
+    echo ""
+    
+    # overall security assessment
+    echo "[SECURITY] Assessment:"
+    
+    # calculate security score
+    score=0
+    max_score=5
+    
+    if pfctl -si 2>/dev/null | grep -q "Status: Enabled"; then
+        score=$((score + 2))
+    fi
+    
+    if sysctl net.inet.ip.forwarding 2>/dev/null | grep -q ": 0"; then
+        score=$((score + 1))
+    fi
+    
+    if sysctl net.inet6.ip6.forwarding 2>/dev/null | grep -q ": 0"; then
+        score=$((score + 1))
+    fi
+    
+    if sysctl net.inet.ip.sourceroute 2>/dev/null | grep -q ": 0"; then
+        score=$((score + 1))
+    fi
+    
+    # display security level
+    if [ $score -ge 4 ]; then
+        echo "  [+] Security Level: HIGH ($score/$max_score)"
+        echo "  [+] System appears to be well protected"
+    elif [ $score -ge 2 ]; then
+        echo "  [!] Security Level: MEDIUM ($score/$max_score)" 
+        echo "  [!] Consider running protection script to improve security"
+    else
+        echo "  [-] Security Level: LOW ($score/$max_score)"
+        echo "  [-] System needs protection - run: sudo $0"
+    fi
+    
+    echo ""
+}
 
 parse_arguments() {
     case "${1:-}" in
@@ -39,13 +183,20 @@ parse_arguments() {
         --minimum)
             PROTECTION_LEVEL="minimum"
             ;;
+        --status)
+            show_status
+            exit 0
+            ;;
         --help|-h)
-            echo "Usage: $0 [--maximum|--medium|--minimum]"
+            echo "Usage: $0 [--maximum|--medium|--minimum|--status]"
             echo ""
             echo "Protection Levels:"
             echo "  --maximum  Full hardening - servers, high security"
             echo "  --medium   Balanced security - workstations (recommended)"
             echo "  --minimum  Basic protection - development, compatibility"
+            echo ""
+            echo "Status Commands:"
+            echo "  --status   Show current protection status and configuration"
             echo ""
             echo "If no level is specified, interactive selection will be shown."
             exit 0
@@ -67,14 +218,16 @@ select_protection_level() {
     fi
     
     echo ""
-    echo "Select Protection Level:"
+    echo "Available Commands:"
     echo "1) Maximum - Full hardening - servers, high security"
     echo "2) Medium  - Balanced security - workstations (recommended)"  
     echo "3) Minimum - Basic protection - development, compatibility"
+    echo "4) Status  - Show current protection status and configuration"
+    echo "5) Help    - Show usage information and exit"
     echo ""
     
     while true; do
-        read -p "Enter choice [1-3]: " choice
+        read -p "Enter choice [1-5]: " choice
         case $choice in
             1)
                 PROTECTION_LEVEL="maximum"
@@ -88,16 +241,34 @@ select_protection_level() {
                 PROTECTION_LEVEL="minimum"
                 break
                 ;;
+            4)
+                show_status
+                exit 0
+                ;;
+            5)
+                echo "Usage: $0 [--maximum|--medium|--minimum|--status]"
+                echo ""
+                echo "Protection Levels:"
+                echo "  --maximum  Full hardening - servers, high security"
+                echo "  --medium   Balanced security - workstations (recommended)"
+                echo "  --minimum  Basic protection - development, compatibility"
+                echo ""
+                echo "Status Commands:"
+                echo "  --status   Show current protection status and configuration"
+                echo ""
+                echo "If no level is specified, interactive selection will be shown."
+                exit 0
+                ;;
             *)
-                echo "Invalid choice. Please enter 1, 2, or 3."
+                echo "Invalid choice. Please enter 1, 2, 3, 4, or 5."
                 ;;
         esac
     done
 }
 
 configure_protection_level() {
-    ALLOWED_PORTS_STR="${LEVEL_PORTS[$PROTECTION_LEVEL]}"
-    BLOCKED_PORTS_STR="${LEVEL_SERVICES[$PROTECTION_LEVEL]}"
+    ALLOWED_PORTS_STR=$(get_level_ports "$PROTECTION_LEVEL")
+    BLOCKED_PORTS_STR=$(get_level_services "$PROTECTION_LEVEL")
     
     log "protection level: $PROTECTION_LEVEL"
     log "allowed ports: $ALLOWED_PORTS_STR"
@@ -181,17 +352,25 @@ if ! command -v pfctl &> /dev/null; then
 fi
 
 log "creating firewall config..."
-cat > /etc/pf.conf << EOF
-tcp_services = "{ $ALLOWED_PORTS_STR }"
-
+cat > /etc/pf.conf << 'EOF'
+set skip on lo0
 block all
 pass out all keep state
-set skip on lo0
-pass in proto tcp from any to any port \$tcp_services
 
-block log quick from any to any port { $BLOCKED_PORTS_STR }
+# Allow specific TCP ports
+pass in proto tcp from any to any port { 22, 80, 443 } keep state
+
+# Block common attack ports
+block log quick proto tcp from any to any port { 135, 139, 445, 1433, 3389 }
+block log quick proto udp from any to any port { 135, 139, 445, 1433, 3389 }
+
+# SSH connection limiting
 pass in proto tcp from any to any port 22 keep state (max-src-conn 3, max-src-conn-rate 3/30)
 EOF
+
+# Replace with actual port values
+sed -i '' "s/{ 22, 80, 443 }/{ $ALLOWED_PORTS_STR }/g" /etc/pf.conf
+sed -i '' "s/{ 135, 139, 445, 1433, 3389 }/{ $BLOCKED_PORTS_STR }/g" /etc/pf.conf
 
 log "validating config..."
 if ! pfctl -vnf /etc/pf.conf; then
@@ -200,10 +379,13 @@ if ! pfctl -vnf /etc/pf.conf; then
 fi
 
 log "applying rules..."
-pfctl -ef /etc/pf.conf
+pfctl -f /etc/pf.conf
 
-if pfctl -si | grep -q "Status: Enabled"; then
+log "enabling pf..."
+if pfctl -e 2>/dev/null; then
     log "SUCCESS: pf enabled"
+elif pfctl -si | grep -q "Status: Enabled"; then
+    log "SUCCESS: pf already enabled"
 else
     log "ERROR: failed to enable pf"
     exit 1
@@ -215,8 +397,9 @@ sysctl -w net.inet.ip.forwarding=0
 sysctl -w net.inet6.ip6.forwarding=0
 sysctl -w net.inet.ip.sourceroute=0
 sysctl -w net.inet.ip.accept_sourceroute=0
-sysctl -w net.inet.tcp.rfc1323=0
-sysctl -w net.inet.tcp.syncookies=1
+if sysctl net.inet.tcp.syncookies >/dev/null 2>&1; then
+    sysctl -w net.inet.tcp.syncookies=1
+fi
 
 log "making settings persistent..."
 cat > /etc/sysctl.conf << EOF
@@ -224,9 +407,11 @@ net.inet.ip.forwarding=0
 net.inet6.ip6.forwarding=0
 net.inet.ip.sourceroute=0
 net.inet.ip.accept_sourceroute=0
-net.inet.tcp.rfc1323=0
-net.inet.tcp.syncookies=1
 EOF
+
+if sysctl net.inet.tcp.syncookies >/dev/null 2>&1; then
+    echo "net.inet.tcp.syncookies=1" >> /etc/sysctl.conf
+fi
 
 log "current rules:"
 pfctl -sr | tee -a "$LOG_FILE"
