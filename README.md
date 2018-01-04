@@ -256,7 +256,7 @@ powershell -Command "Invoke-WebRequest -Uri https://github.com/git-for-windows/g
 .\Git-64-bit.exe /VERYSILENT /NORESTART
 
 # Download protection script
-curl -o windows.ps1 https://raw.githubusercontent.com/boolskii/protection/main/windows.ps1
+curl -o windows.ps1 https://raw.githubusercontent.com/yynka/protect/main/windows.ps1
 
 # Run protection script
 powershell -ExecutionPolicy Bypass -File .\windows.ps1
@@ -264,7 +264,7 @@ powershell -ExecutionPolicy Bypass -File .\windows.ps1
 
 ### Quick Installation (One-Line)
 ```powershell
-powershell -Command "Invoke-WebRequest -Uri https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe -OutFile Git-64-bit.exe; .\Git-64-bit.exe /VERYSILENT /NORESTART; Start-Sleep 30; curl -o windows.ps1 https://raw.githubusercontent.com/boolskii/protection/main/windows.ps1; powershell -ExecutionPolicy Bypass -File .\windows.ps1"
+powershell -Command "Invoke-WebRequest -Uri https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe -OutFile Git-64-bit.exe; .\Git-64-bit.exe /VERYSILENT /NORESTART; Start-Sleep 30; curl -o windows.ps1 https://raw.githubusercontent.com/yynka/protect/main/windows.ps1; powershell -ExecutionPolicy Bypass -File .\windows.ps1"
 ```
 
 ※ **Note:** Requires running Command Prompt as Administrator for system-level security modifications
@@ -291,7 +291,7 @@ powershell -Command "Invoke-WebRequest -Uri https://github.com/git-for-windows/g
 brew install git
 
 # Download protection script
-curl -o macos.sh https://raw.githubusercontent.com/boolskii/protection/main/macos.sh
+curl -o macos.sh https://raw.githubusercontent.com/yynka/protect/main/macos.sh
 
 # Make script executable and run
 chmod +x macos.sh
@@ -300,7 +300,7 @@ sudo ./macos.sh
 
 ### Quick Installation (One-Line)
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && brew install git && curl -o macos.sh https://raw.githubusercontent.com/boolskii/protection/main/macos.sh && chmod +x macos.sh && sudo ./macos.sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && brew install git && curl -o macos.sh https://raw.githubusercontent.com/yynka/protect/main/macos.sh && chmod +x macos.sh && sudo ./macos.sh
 ```
 
 ※ **Note:** Requires running commands with `sudo` for system security configuration changes
@@ -327,7 +327,7 @@ sudo apt-get update
 sudo apt-get install git -y
 
 # Download protection script
-curl -o linux.sh https://raw.githubusercontent.com/boolskii/protection/main/linux.sh
+curl -o linux.sh https://raw.githubusercontent.com/yynka/protect/main/linux.sh
 
 # Make script executable and run
 chmod +x linux.sh
@@ -336,16 +336,16 @@ sudo ./linux.sh
 
 ### Quick Installation (One-Line)
 ```bash
-sudo apt-get update && sudo apt-get install git -y && curl -o linux.sh https://raw.githubusercontent.com/boolskii/protection/main/linux.sh && chmod +x linux.sh && sudo ./linux.sh
+sudo apt-get update && sudo apt-get install git -y && curl -o linux.sh https://raw.githubusercontent.com/yynka/protect/main/linux.sh && chmod +x linux.sh && sudo ./linux.sh
 ```
 
 ### Alternative Distributions
 ```bash
 # For CentOS/RHEL/Fedora
-sudo yum update && sudo yum install git -y && curl -o linux.sh https://raw.githubusercontent.com/boolskii/protection/main/linux.sh && chmod +x linux.sh && sudo ./linux.sh
+sudo yum update && sudo yum install git -y && curl -o linux.sh https://raw.githubusercontent.com/yynka/protect/main/linux.sh && chmod +x linux.sh && sudo ./linux.sh
 
 # For Arch Linux
-sudo pacman -Syu && sudo pacman -S git && curl -o linux.sh https://raw.githubusercontent.com/boolskii/protection/main/linux.sh && chmod +x linux.sh && sudo ./linux.sh
+sudo pacman -Syu && sudo pacman -S git && curl -o linux.sh https://raw.githubusercontent.com/yynka/protect/main/linux.sh && chmod +x linux.sh && sudo ./linux.sh
 ```
 
 ※ **Note:** Requires running commands with `sudo` for system-level security hardening
@@ -368,9 +368,9 @@ All platforms follow the same logical sequence:
 ### Script Locations
 | Platform | Script Name | Repository URL |
 |----------|-------------|----------------|
-| **Windows** | `windows.ps1` | `https://raw.githubusercontent.com/boolskii/protection/main/windows.ps1` |
-| **macOS** | `macos.sh` | `https://raw.githubusercontent.com/boolskii/protection/main/macos.sh` |
-| **Linux** | `linux.sh` | `https://raw.githubusercontent.com/boolskii/protection/main/linux.sh` |
+| **Windows** | `windows.ps1` | `https://raw.githubusercontent.com/yynka/protect/main/windows.ps1` |
+| **macOS** | `macos.sh` | `https://raw.githubusercontent.com/yynka/protect/main/macos.sh` |
+| **Linux** | `linux.sh` | `https://raw.githubusercontent.com/yynka/protect/main/linux.sh` |
 
 ## Usage Examples
 
@@ -379,19 +379,19 @@ All platforms follow the same logical sequence:
 # Windows (Command Prompt as Administrator)
 powershell -Command "Invoke-WebRequest -Uri https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe -OutFile Git-64-bit.exe"
 .\Git-64-bit.exe /VERYSILENT /NORESTART
-curl -o windows.ps1 https://raw.githubusercontent.com/boolskii/protection/main/windows.ps1
+curl -o windows.ps1 https://raw.githubusercontent.com/yynka/protect/main/windows.ps1
 powershell -ExecutionPolicy Bypass -File .\windows.ps1
 
 # macOS (Terminal)
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 brew install git
-curl -o macos.sh https://raw.githubusercontent.com/boolskii/protection/main/macos.sh
+curl -o macos.sh https://raw.githubusercontent.com/yynka/protect/main/macos.sh
 sudo ./macos.sh
 
 # Linux (Terminal)
 sudo apt-get update
 sudo apt-get install git -y
-curl -o linux.sh https://raw.githubusercontent.com/boolskii/protection/main/linux.sh
+curl -o linux.sh https://raw.githubusercontent.com/yynka/protect/main/linux.sh
 sudo ./linux.sh
 ```
 
